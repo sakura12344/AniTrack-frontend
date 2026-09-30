@@ -6,6 +6,7 @@ import Register from "../pages/register/register.jsx"
 
 import AppLayout from "../layouts/AppLayout.jsx"
 import Library from "../pages/library/library.jsx"
+import ErrorBoundary from "../components/ErrorBoundary.jsx"
 import Watch from "../pages/watch/watch.jsx"
 import Favorites from "../pages/favorites/favorites.jsx"
 import History from "../pages/history/history.jsx"
@@ -14,6 +15,7 @@ import Recommend from "../pages/recommend/recommend.jsx"
 import Notifications from "../pages/notifications/notifications.jsx"
 import CommentAnalysis from "../pages/comment-analysis/comment-analysis.jsx"
 import RelationGraph from "../pages/relation-graph/relation-graph.jsx"
+import AnimeDetail from "../pages/AnimeDetailPage/index.jsx"
 
 function AppRouter() {
   return (
@@ -25,7 +27,14 @@ function AppRouter() {
 
       {/* 登录后的应用区域 */}
       <Route path="/app" element={<AppLayout />}>
-        <Route path="library" element={<Library />} />
+        <Route
+          path="library"
+          element={
+            <ErrorBoundary>
+              <Library />
+            </ErrorBoundary>
+          }
+        />
         <Route path="watch" element={<Watch />} />
         <Route path="favorites" element={<Favorites />} />
         <Route path="history" element={<History />} />
@@ -34,6 +43,7 @@ function AppRouter() {
         <Route path="notifications" element={<Notifications />} />
         <Route path="comment-analysis" element={<CommentAnalysis />} />
         <Route path="relation-graph" element={<RelationGraph />} />
+        <Route path="anime/:id" element={<AnimeDetail />} />
       </Route>
     </Routes>
   )

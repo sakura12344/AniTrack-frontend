@@ -1,27 +1,84 @@
 import { useState, useCallback } from "react"
 import { Link, useNavigate } from "react-router-dom"
+import { login as authLogin } from "../../api/auth.js"
+
+const USERNAME_MAX_LENGTH = 20
+const PASSWORD_MAX_LENGTH = 20
 
 function Login() {
   const navigate = useNavigate()
 
-  const [email, setEmail] = useState("")
+  const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
 
+  // Field-level validation errors (displayed below each input)
+  const [fieldErrors, setFieldErrors] = useState({})
+  // Server-level error (displayed as a general banner)
+  const [serverError, setServerError] = useState("")
+
+  // ---- Validation ----
+  const validate = useCallback(() => {
+    const errors = {}
+
+    const trimmedUsername = username.trim()
+
+    // Username required
+    if (!trimmedUsername) {
+      errors.username = "请输入用户名"
+    } else if (trimmedUsername.length > USERNAME_MAX_LENGTH) {
+      errors.username = `用户名长度不能超过 ${USERNAME_MAX_LENGTH} 个字符`
+    } else if (trimmedUsername.length < 3) {
+      errors.username = "用户名至少 3 个字符"
+    }
+
+    // Password required
+    if (!password) {
+      errors.password = "请输入密码"
+    } else if (password.length > PASSWORD_MAX_LENGTH) {
+      errors.password = `密码长度不能超过 ${PASSWORD_MAX_LENGTH} 个字符`
+    } else if (password.length < 8) {
+      errors.password = "密码至少 8 个字符"
+    }
+
+    return errors
+  }, [username, password])
+
+  // ---- Submit ----
   const handleSubmit = useCallback(
-    (e) => {
+    async (e) => {
       e.preventDefault()
+
+      // Clear previous errors
+      setFieldErrors({})
+      setServerError("")
+
+      // Run validation
+      const validationErrors = validate()
+      setFieldErrors(validationErrors)
+      if (Object.keys(validationErrors).length > 0) {
+        return
+      }
+
       setLoading(true)
 
-      setTimeout(() => {
-        setLoading(false)
-        localStorage.setItem("currentUser", email || "user")
+      try {
+        await authLogin(username.trim(), password)
         navigate("/app")
-      }, 1500)
+      } catch (err) {
+        setServerError(err.message || "登录失败，请稍后重试")
+      } finally {
+        setLoading(false)
+      }
     },
-    [email, navigate],
+    [username, password, navigate, validate],
   )
+
+  // ---- Helpers for accessibility ----
+  const usernameErrorId = "username-error"
+  const passwordErrorId = "password-error"
+  const serverErrorId = "server-error"
 
   return (
     <div className="min-h-screen flex">
@@ -60,28 +117,66 @@ function Login() {
               欢迎回来
             </h1>
 
+            {/* ---- Server-level error banner ---- */}
+            {serverError && (
+              <div
+                id={serverErrorId}
+                role="alert"
+                aria-live="assertive"
+                className="mb-5 px-4 py-3 rounded-lg text-sm bg-[#FEF2F2] border border-[#FECACA] text-[#B91C1C]"
+              >
+                {serverError}
+              </div>
+            )}
+
             <form onSubmit={handleSubmit} noValidate>
-              {/* Email */}
+              {/* ---- Username ---- */}
               <div className="mb-5">
                 <label
-                  htmlFor="email"
+                  htmlFor="username"
                   className="block text-sm font-semibold mb-2 text-[#172033]"
                 >
-                  邮箱
+                  用户名
                 </label>
                 <input
-                  id="email"
-                  name="email"
-                  type="email"
-                  autoComplete="email"
-                  placeholder="you@example.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full px-4 py-3 rounded-lg text-base transition-colors duration-150 focus:outline-none min-h-11 bg-[#f8fafc] border border-[#e2e8f0] text-[#172033] focus:border-[#3B82F6]"
+                  id="username"
+                  name="username"
+                  type="text"
+                  autoComplete="username"
+                  placeholder="请输入用户名"
+                  value={username}
+                  onChange={(e) => {
+                    setUsername(e.target.value)
+                    if (fieldErrors.username) {
+                      setFieldErrors((prev) => ({ ...prev, username: "" }))
+                    }
+                    if (serverError) setServerError("")
+                  }}
+                  maxLength={USERNAME_MAX_LENGTH}
+                  aria-required="true"
+                  aria-invalid={!!fieldErrors.username}
+                  aria-describedby={
+                    fieldErrors.username ? usernameErrorId : undefined
+                  }
+                  className={`w-full px-4 py-3 rounded-lg text-base transition-colors duration-150 focus:outline-none min-h-11 bg-[#f8fafc] text-[#172033] ${
+                    fieldErrors.username
+                      ? "border-[#EF4444] focus:border-[#EF4444]"
+                      : "border-[#e2e8f0] focus:border-[#3B82F6]"
+                  }`}
                 />
+                {fieldErrors.username && (
+                  <p
+                    id={usernameErrorId}
+                    role="alert"
+                    aria-live="polite"
+                    className="mt-1.5 text-sm text-[#EF4444]"
+                  >
+                    {fieldErrors.username}
+                  </p>
+                )}
               </div>
 
-              {/* Password */}
+              {/* ---- Password ---- */}
               <div className="mb-6">
                 <label
                   htmlFor="password"
@@ -97,14 +192,34 @@ function Login() {
                     autoComplete="current-password"
                     placeholder="请输入密码"
                     value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="w-full px-4 py-3 pr-12 rounded-lg text-base transition-colors duration-150 focus:outline-none min-h-11 bg-[#f8fafc] border border-[#e2e8f0] text-[#172033] focus:border-[#3B82F6]"
+                    onChange={(e) => {
+                      setPassword(e.target.value)
+                      if (fieldErrors.password) {
+                        setFieldErrors((prev) => ({
+                          ...prev,
+                          password: "",
+                        }))
+                      }
+                      if (serverError) setServerError("")
+                    }}
+                    maxLength={PASSWORD_MAX_LENGTH}
+                    aria-required="true"
+                    aria-invalid={!!fieldErrors.password}
+                    aria-describedby={
+                      fieldErrors.password ? passwordErrorId : undefined
+                    }
+                    className={`w-full px-4 py-3 pr-12 rounded-lg text-base transition-colors duration-150 focus:outline-none min-h-11 bg-[#f8fafc] text-[#172033] ${
+                      fieldErrors.password
+                        ? "border-[#EF4444] focus:border-[#EF4444]"
+                        : "border-[#e2e8f0] focus:border-[#3B82F6]"
+                    }`}
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword((v) => !v)}
                     className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 flex items-center justify-center rounded-md transition-colors duration-150 cursor-pointer focus-visible:outline-none"
                     aria-label={showPassword ? "隐藏密码" : "显示密码"}
+                    tabIndex={0}
                   >
                     {showPassword ? (
                       <svg
@@ -137,9 +252,19 @@ function Login() {
                     )}
                   </button>
                 </div>
+                {fieldErrors.password && (
+                  <p
+                    id={passwordErrorId}
+                    role="alert"
+                    aria-live="polite"
+                    className="mt-1.5 text-sm text-[#EF4444]"
+                  >
+                    {fieldErrors.password}
+                  </p>
+                )}
               </div>
 
-              {/* Submit */}
+              {/* ---- Submit ---- */}
               <button
                 type="submit"
                 disabled={loading}
@@ -162,7 +287,7 @@ function Login() {
               </button>
             </form>
 
-            {/* Footer links */}
+            {/* ---- Footer links ---- */}
             <div className="mt-8 text-center">
               <p className="text-sm text-[#64748b]">
                 还没有账号？

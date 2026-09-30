@@ -1,5 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react"
 import { Outlet, Link, useLocation, useNavigate } from "react-router-dom"
+import { getCurrentUser, logout as authLogout } from "../api/auth.js"
+import { fetchPreferences, savePreferences } from "../api/user.js"
 
 const navItems = [
   { path: "library", label: "番剧浏览", icon: LibraryIcon },
@@ -313,6 +315,26 @@ function SearchIcon({ className = "w-4 h-4" }) {
   )
 }
 
+function PersonalizeIcon() {
+  return (
+    <svg
+      className="w-5 h-5 shrink-0"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <circle cx="12" cy="8" r="4" />
+      <path d="M20 21a8 8 0 1 0-16 0" />
+      <line x1="18" y1="3" x2="18" y2="6" />
+      <line x1="18" y1="9" x2="18" y2="11" />
+      <line x1="15" y1="7" x2="21" y2="7" />
+    </svg>
+  )
+}
+
 function AppLayout() {
   const location = useLocation()
   const navigate = useNavigate()
@@ -322,6 +344,14 @@ function AppLayout() {
   const [profileOpen, setProfileOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [settingsCat, setSettingsCat] = useState("appearance")
+  const [adultFilter, setAdultFilter] = useState(
+    () => localStorage.getItem("adultFilter") || "hide",
+  )
+  const [excludeUnlicensed, setExcludeUnlicensed] = useState(
+    () => localStorage.getItem("excludeUnlicensed") !== "false",
+  )
+  const [saving, setSaving] = useState(false)
+  const [saveStatus, setSaveStatus] = useState(null) // 'success' | 'error' | null
   const accountTriggerRef = useRef(null)
   const popoverRef = useRef(null)
 
@@ -347,8 +377,8 @@ function AppLayout() {
   }, [])
   const closeSettings = useCallback(() => setSettingsOpen(false), [])
 
-  const handleLogout = useCallback(() => {
-    localStorage.removeItem("currentUser")
+  const handleLogout = useCallback(async () => {
+    await authLogout()
     navigate("/login")
   }, [navigate])
 
@@ -380,6 +410,55 @@ function AppLayout() {
     document.addEventListener("keydown", onKey)
     return () => document.removeEventListener("keydown", onKey)
   }, [profileOpen, settingsOpen, drawerOpen, popoverOpen])
+
+  // 打开设置时从后端获取已保存的偏好
+  useEffect(() => {
+    if (!settingsOpen) return
+    const user = getCurrentUser()
+    if (!user?.userId) return
+
+    fetchPreferences(user.userId)
+      .then((prefs) => {
+        if (!prefs) return
+        if (prefs.adultFilter) {
+          setAdultFilter(prefs.adultFilter)
+          localStorage.setItem("adultFilter", prefs.adultFilter)
+        }
+        if (prefs.excludeUnlicensed !== undefined) {
+          setExcludeUnlicensed(prefs.excludeUnlicensed)
+          localStorage.setItem(
+            "excludeUnlicensed",
+            String(prefs.excludeUnlicensed),
+          )
+        }
+      })
+      .catch(() => {
+        // 接口失败时回退到 localStorage 中的值
+      })
+  }, [settingsOpen])
+
+  const handleSavePreferences = useCallback(async () => {
+    const user = getCurrentUser()
+    if (!user?.userId) return
+
+    setSaving(true)
+    setSaveStatus(null)
+
+    try {
+      await savePreferences(user.userId, {
+        adultFilter,
+        excludeUnlicensed,
+      })
+      setSaveStatus("success")
+      window.dispatchEvent(new CustomEvent("preferencesSaved"))
+      setTimeout(() => setSaveStatus(null), 2500)
+    } catch {
+      setSaveStatus("error")
+      setTimeout(() => setSaveStatus(null), 2500)
+    } finally {
+      setSaving(false)
+    }
+  }, [adultFilter, excludeUnlicensed])
 
   useEffect(() => {
     if (drawerOpen) {
@@ -618,7 +697,7 @@ function AppLayout() {
           onClick={closeProfile}
         >
           <div
-            className="w-full max-w-4xl mx-4 bg-white rounded-2xl border border-[#e2e8f0] shadow-xl"
+            className="w-[400px] max-w-4xl mx-4 bg-white rounded-2xl border border-[#e2e8f0] shadow-xl"
             role="dialog"
             aria-modal="true"
             onClick={(e) => e.stopPropagation()}
@@ -717,6 +796,11 @@ function AppLayout() {
                     icon: NotificationsIcon,
                   },
                   { key: "application", label: "应用", icon: StatsIcon },
+                  {
+                    key: "personalize",
+                    label: "个性化",
+                    icon: PersonalizeIcon,
+                  },
                 ].map((cat) => (
                   <button
                     key={cat.key}
@@ -823,6 +907,130 @@ function AppLayout() {
                           </p>
                         </div>
                         <div className="text-sm text-[#64748b]">已开启</div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                {settingsCat === "personalize" && (
+                  <div>
+                    <h3 className="text-sm font-semibold text-[#0f172a] mb-4">
+                      个性化
+                    </h3>
+                    <div className="space-y-6">
+                      {/* 成人内容过滤 */}
+                      <div>
+                        <p className="text-sm font-medium text-[#0f172a] mb-2">
+                          成人内容
+                        </p>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => {
+                              setAdultFilter("hide")
+                              localStorage.setItem("adultFilter", "hide")
+                            }}
+                            className={`px-4 py-2 rounded-lg text-sm transition-colors duration-150 ${
+                              adultFilter === "hide"
+                                ? "bg-sky-500 text-white"
+                                : "bg-[#f1f5f9] text-[#64748b] hover:bg-sky-50 hover:text-sky-600"
+                            }`}
+                          >
+                            隐藏
+                          </button>
+                          <button
+                            onClick={() => {
+                              setAdultFilter("show")
+                              localStorage.setItem("adultFilter", "show")
+                            }}
+                            className={`px-4 py-2 rounded-lg text-sm transition-colors duration-150 ${
+                              adultFilter === "show"
+                                ? "bg-sky-500 text-white"
+                                : "bg-[#f1f5f9] text-[#64748b] hover:bg-sky-50 hover:text-sky-600"
+                            }`}
+                          >
+                            包含
+                          </button>
+                          <button
+                            onClick={() => {
+                              setAdultFilter("only")
+                              localStorage.setItem("adultFilter", "only")
+                            }}
+                            className={`px-4 py-2 rounded-lg text-sm transition-colors duration-150 ${
+                              adultFilter === "only"
+                                ? "bg-sky-500 text-white"
+                                : "bg-[#f1f5f9] text-[#64748b] hover:bg-sky-50 hover:text-sky-600"
+                            }`}
+                          >
+                            仅成人
+                          </button>
+                        </div>
+                        <p className="text-xs text-[#64748b] mt-1.5">
+                          控制番剧浏览中是否显示成人向作品
+                        </p>
+                      </div>
+
+                      {/* 授权过滤 */}
+                      <div>
+                        <p className="text-sm font-medium text-[#0f172a] mb-2">
+                          授权作品
+                        </p>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => {
+                              setExcludeUnlicensed(true)
+                              localStorage.setItem("excludeUnlicensed", "true")
+                            }}
+                            className={`px-4 py-2 rounded-lg text-sm transition-colors duration-150 ${
+                              excludeUnlicensed
+                                ? "bg-sky-500 text-white"
+                                : "bg-[#f1f5f9] text-[#64748b] hover:bg-sky-50 hover:text-sky-600"
+                            }`}
+                          >
+                            仅已授权
+                          </button>
+                          <button
+                            onClick={() => {
+                              setExcludeUnlicensed(false)
+                              localStorage.setItem("excludeUnlicensed", "false")
+                            }}
+                            className={`px-4 py-2 rounded-lg text-sm transition-colors duration-150 ${
+                              !excludeUnlicensed
+                                ? "bg-sky-500 text-white"
+                                : "bg-[#f1f5f9] text-[#64748b] hover:bg-sky-50 hover:text-sky-600"
+                            }`}
+                          >
+                            包含未授权
+                          </button>
+                        </div>
+                        <p className="text-xs text-[#64748b] mt-1.5">
+                          选择是否显示未授权作品（如同人作品）
+                        </p>
+                      </div>
+
+                      {/* 保存按钮 */}
+                      <div className="pt-4 border-t border-[#e2e8f0]">
+                        <div className="flex items-center gap-3">
+                          <button
+                            type="button"
+                            onClick={handleSavePreferences}
+                            disabled={saving}
+                            className="px-5 py-2 rounded-lg text-sm font-medium text-white bg-sky-500 hover:bg-sky-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-150"
+                          >
+                            {saving ? "保存中..." : "保存设置"}
+                          </button>
+                          {saveStatus === "success" && (
+                            <span className="text-sm text-green-600">
+                              已保存到云端
+                            </span>
+                          )}
+                          {saveStatus === "error" && (
+                            <span className="text-sm text-red-500">
+                              保存失败，请重试
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-[#64748b] mt-2">
+                          点击立即将当前设置同步到你的账户
+                        </p>
                       </div>
                     </div>
                   </div>
