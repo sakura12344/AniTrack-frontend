@@ -163,15 +163,16 @@ function AnimeDetail() {
 
   if (error) {
     return (
-      <div className="min-h-screen bg-[#f8fafc] flex flex-col items-center justify-center px-4">
+      <div className="h-full flex flex-col items-center justify-center bg-[#f8fafc] relative overflow-hidden">
         <button
           onClick={() => navigate(-1)}
-          className="self-start flex items-center gap-1.5 text-sm text-[#64748b] hover:text-sky-600 mb-6 transition-colors duration-150 cursor-pointer"
+          className="absolute top-4 left-4 z-10 inline-flex items-center gap-1.5 px-3 py-1.5 bg-white/80 backdrop-blur-md text-[#0f172a] text-sm rounded-lg hover:bg-white/90 transition-all duration-200 cursor-pointer border border-[#e2e8f0] hover:border-sky-200"
+          aria-label="返回上一页"
         >
           <BackIcon />
-          返回
+          <span className="hidden sm:inline">返回</span>
         </button>
-        <div className="text-center py-16 max-w-md">
+        <div className="text-center max-w-md">
           <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-sky-50 flex items-center justify-center">
             <svg
               className="w-10 h-10 text-sky-400"
